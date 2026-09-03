@@ -21,6 +21,8 @@ Subjects: Science, Maths & logic, History, Geography, Computing, and Parliament 
 
 The browser never receives `OPENAI_API_KEY` or the private answer keys.
 
+Every answer box also includes optional dictation. The browser records only after the player taps the microphone, then sends the completed audio clip to `app/api/transcribe/route.ts`. That server-only route uses OpenAI's `gpt-transcribe` speech-recognition model and returns text to the same editable answer box. The app does not save recordings.
+
 ## Interaction feedback
 
 Short CC0 interface sounds from Kenney accompany taps and verdicts, with an always-visible mute control. `web-haptics` provides brief mobile haptics (including its iOS Safari fallback), and `canvas-confetti` marks passed rounds and the final unlock. Confetti automatically respects reduced-motion preferences.

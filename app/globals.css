@@ -155,13 +155,25 @@ blockquote.counter { border-color: #bcd1c8; background: var(--green-pale); }
 .role-grid strong { font-size: 12px; }
 .huddle-mark { width: 104px; height: 104px; margin: 50px auto 26px; display: grid; place-items: center; color: var(--green); border: 1px solid var(--green); border-radius: 50%; box-shadow: 0 0 0 10px var(--green-pale); }
 
-.response-box { display: block; margin: 0 0 13px; position: relative; }
-.response-box > span { display: block; font-size: 12px; font-weight: 850; margin: 0 0 7px; color: var(--ink); }
-.response-box textarea { display: block; width: 100%; resize: vertical; min-height: 104px; padding: 14px 15px 22px; color: var(--ink); background: white; border: 1px solid #bdc8c3; border-radius: 8px; font-size: 16px; line-height: 1.5; outline: none; transition: border .15s, box-shadow .15s; }
+.response-box { display: block; margin: 0 0 13px; }
+.response-box > label { display: block; font-size: 12px; font-weight: 850; margin: 0 0 7px; color: var(--ink); }
+.textarea-shell { position: relative; }
+.response-box textarea { display: block; width: 100%; resize: vertical; min-height: 104px; padding: 14px 62px 14px 15px; color: var(--ink); background: white; border: 1px solid #bdc8c3; border-radius: 8px; font-size: 16px; line-height: 1.5; outline: none; transition: border .15s, box-shadow .15s; }
 .response-box.roomy textarea { min-height: 144px; }
 .response-box textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(0,101,72,.12); }
 .response-box textarea::placeholder { color: #929b97; }
-.response-box small { position: absolute; right: 10px; bottom: 7px; color: #929b97; font-size: 9px; background: white; padding-left: 5px; }
+.dictation-button { position: absolute; right: 10px; bottom: 10px; width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid #aebdb6; border-radius: 50%; color: var(--green); background: rgba(255,255,255,.96); cursor: pointer; box-shadow: 0 4px 13px rgba(23,32,29,.1); transition: transform .15s, color .15s, background .15s, border-color .15s; }
+.dictation-button:hover:not(:disabled) { color: white; background: var(--green); border-color: var(--green); }
+.dictation-button:active:not(:disabled) { transform: scale(.93); }
+.dictation-button:disabled { cursor: wait; opacity: .68; }
+.dictation-button.recording { color: white; background: var(--danger); border-color: var(--danger); animation: record-pulse 1.5s ease-in-out infinite; }
+.response-meta { min-height: 24px; display: flex; justify-content: space-between; gap: 10px; padding: 6px 3px 0; color: var(--green); font-size: 11px; line-height: 1.4; }
+.response-meta > span { min-width: 0; }
+.response-meta > span.error { color: var(--danger); }
+.response-meta small { flex: 0 0 auto; margin-left: auto; color: #929b97; font-size: 9px; }
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes record-pulse { 50% { box-shadow: 0 0 0 7px rgba(164,65,49,.13); } }
 
 .guide-card { border-radius: 10px; padding: 18px; margin-top: 6px; border: 1px solid; animation: arrive .25s ease both; }
 .guide-card.pass { color: var(--green-dark); border-color: #abd0c1; background: var(--green-pale); }

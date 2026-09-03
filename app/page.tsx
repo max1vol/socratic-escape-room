@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -8,17 +8,20 @@ import {
   ChevronRight,
   Clock3,
   Gavel,
+  LoaderCircle,
   Minus,
   Mic,
   Plus,
   RotateCcw,
   ShieldCheck,
   Sparkles,
+  Square,
   UserRound,
   Users,
   Volume2,
   VolumeX,
 } from "lucide-react";
+import { useDictation, type DictationState } from "../hooks/use-dictation";
 import { useFeedback } from "../hooks/use-feedback";
 
 type Level = "ks2" | "ks3";
@@ -54,26 +57,7 @@ type RoundSave = {
   guide: GuideReply | null;
 };
 
-type SpeechRecognitionEventLike = Event & {
-  results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
-  resultIndex: number;
-};
-type SpeechRecognitionLike = {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start: () => void;
-  stop: () => void;
-  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: (() => void) | null;
-  onend: (() => void) | null;
-};
-declare global {
-  interface Window {
-    SpeechRecognition?: new () => SpeechRecognitionLike;
-    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
-  }
-}
+type DictationControls = ReturnType<typeof useDictation>;
 
 const ROUND_ORDER: Round[] = ["spot", "explain", "challenge", "defend"];
 const ROUND_LABELS = ["Spot", "Explain", "Challenge", "Defend"];
@@ -217,12 +201,17 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [defencePhase, setDefencePhase] = useState<DefencePhase>("brief");
   const [seconds, setSeconds] = useState(45);
-  const [speechSupported] = useState(() => typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
-  const [listening, setListening] = useState(false);
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const speechBaseRef = useRef("");
   const unlockedRef = useRef(false);
   const { soundEnabled, tap, toggleSound, unlock, verdict, warning } = useFeedback();
+  const appendTranscript = useCallback((transcript: string) => {
+    setAnswer((current) => {
+      const existing = current.trimEnd();
+      return `${existing}${existing ? " " : ""}${transcript}`.slice(0, 1_600);
+    });
+  }, []);
+  const dictation = useDictation(appendTranscript);
+  const stopDictation = dictation.stop;
+  const dictationBusy = dictation.state === "requesting" || dictation.state === "recording" || dictation.state === "transcribing";
 
   useEffect(() => {
     fetch("/api/questions")
@@ -240,39 +229,6 @@ export default function Home() {
     [round, session],
   );
 
-  const stopRecognition = useCallback(() => {
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
-    setListening(false);
-  }, []);
-
-  const startRecognition = useCallback(() => {
-    if (!speechSupported) return;
-    const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Recognition) return;
-    const recognition = new Recognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-GB";
-    speechBaseRef.current = answer ? `${answer.trim()} ` : "";
-    recognition.onresult = (event) => {
-      let finalText = speechBaseRef.current;
-      let interimText = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        if (result.isFinal) finalText += `${result[0].transcript} `;
-        else interimText += result[0].transcript;
-      }
-      speechBaseRef.current = finalText;
-      setAnswer(`${finalText}${interimText}`.trim());
-    };
-    recognition.onerror = () => setListening(false);
-    recognition.onend = () => setListening(false);
-    recognitionRef.current = recognition;
-    recognition.start();
-    setListening(true);
-  }, [answer, speechSupported]);
-
   useEffect(() => {
     if (stage !== 4 || defencePhase !== "speech" || seconds <= 0) return;
     const timer = window.setTimeout(() => {
@@ -280,12 +236,12 @@ export default function Home() {
       setSeconds(next);
       if (next === 10) warning();
       if (next === 0) {
-        stopRecognition();
+        stopDictation();
         setDefencePhase("conclude");
       }
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [defencePhase, seconds, stage, stopRecognition, warning]);
+  }, [defencePhase, seconds, stage, stopDictation, warning]);
 
   useEffect(() => {
     if (stage !== 5 || unlockedRef.current) return;
@@ -364,7 +320,7 @@ export default function Home() {
     }
     saveCurrentRound();
     if (stage === 4) {
-      stopRecognition();
+      dictation.cancel();
       setStage(5);
       return;
     }
@@ -376,8 +332,8 @@ export default function Home() {
   }
 
   function goBack() {
+    dictation.cancel();
     if (stage === 4 && defencePhase !== "brief") {
-      stopRecognition();
       saveCurrentRound();
       setDefencePhase("brief");
       setSeconds(45);
@@ -398,7 +354,7 @@ export default function Home() {
   }
 
   function startFresh() {
-    stopRecognition();
+    dictation.cancel();
     setSession([]);
     setRoundSaves({});
     setAnswer("");
@@ -414,19 +370,19 @@ export default function Home() {
   }
 
   function beginDefence() {
+    dictation.cancel();
     setSeconds(45);
     setGuide(null);
     setDefencePhase("speech");
-    window.setTimeout(startRecognition, 120);
   }
 
   function finishDefence() {
-    stopRecognition();
+    dictation.stop();
     setDefencePhase("conclude");
   }
 
   function submitCurrent() {
-    if (!question || !round || answer.trim().length < 12) return;
+    if (!question || !round || answer.trim().length < 12 || dictationBusy) return;
     void askGuide(question.id, answer.trim(), round);
   }
 
@@ -537,6 +493,7 @@ export default function Home() {
             next={nextRound}
             action={ROUND_COPY[round].action}
             roomy={round !== "spot"}
+            dictation={dictation}
           />
         </StageShell>
       )}
@@ -562,30 +519,32 @@ export default function Home() {
           )}
           {defencePhase === "speech" && (
             <>
-              <Timer seconds={seconds} listening={listening} speechSupported={speechSupported} />
+              <Timer seconds={seconds} dictationState={dictation.state} />
               <ResponseBox
-                label={speechSupported ? "Live transcript" : "Defence notes"}
+                label="Your defence"
                 value={answer}
                 onChange={setAnswer}
                 placeholder="Madam Deputy Speaker, my case is…"
                 roomy
+                dictation={dictation}
               />
-              <PrimaryButton disabled={answer.trim().length < 20} onClick={finishDefence}>Finish the defence</PrimaryButton>
+              <PrimaryButton disabled={answer.trim().length < 20 && dictation.state !== "recording"} onClick={finishDefence}>Finish the defence</PrimaryButton>
             </>
           )}
           {defencePhase === "conclude" && (
             <>
               <div className="time-called"><Gavel size={28} /><span>Order</span></div>
               <ResponseBox
-                label={speechSupported ? "Your recorded defence" : "Your defence"}
+                label="Your defence"
                 value={answer}
                 onChange={setAnswer}
                 placeholder="My case is…"
                 roomy
                 disabled={loading || Boolean(guide)}
+                dictation={dictation}
               />
               {guide ? <GuideCard guide={guide} onContinue={nextRound} final /> : (
-                <PrimaryButton disabled={answer.trim().length < 20 || loading} onClick={submitCurrent}>
+                <PrimaryButton disabled={answer.trim().length < 20 || loading || dictationBusy} onClick={submitCurrent}>
                   {loading ? "The House is deciding…" : "Put it to the House"}
                 </PrimaryButton>
               )}
@@ -647,7 +606,7 @@ function QuestionCard({ question, hideAdviser = false }: { question: PublicQuest
   );
 }
 
-function AnswerPanel({ prompt, placeholder, label, answer, setAnswer, guide, loading, submit, next, action, roomy = false }: {
+function AnswerPanel({ prompt, placeholder, label, answer, setAnswer, guide, loading, submit, next, action, dictation, roomy = false }: {
   prompt: string;
   placeholder: string;
   label: string;
@@ -658,14 +617,16 @@ function AnswerPanel({ prompt, placeholder, label, answer, setAnswer, guide, loa
   submit: () => void;
   next: () => void;
   action: string;
+  dictation: DictationControls;
   roomy?: boolean;
 }) {
+  const dictationBusy = dictation.state === "requesting" || dictation.state === "recording" || dictation.state === "transcribing";
   return (
     <>
       <p className="prompt">{prompt}</p>
-      <ResponseBox label={label} value={answer} onChange={setAnswer} placeholder={placeholder} roomy={roomy} disabled={loading || Boolean(guide)} />
+      <ResponseBox label={label} value={answer} onChange={setAnswer} placeholder={placeholder} roomy={roomy} disabled={loading || Boolean(guide)} dictation={dictation} />
       {guide ? <GuideCard guide={guide} onContinue={next} /> : (
-        <PrimaryButton disabled={answer.trim().length < 12 || loading} onClick={submit}>
+        <PrimaryButton disabled={answer.trim().length < 12 || loading || dictationBusy} onClick={submit}>
           {loading ? "The Clerk is reading…" : action}
         </PrimaryButton>
       )}
@@ -673,20 +634,54 @@ function AnswerPanel({ prompt, placeholder, label, answer, setAnswer, guide, loa
   );
 }
 
-function ResponseBox({ label, value, onChange, placeholder, disabled = false, roomy = false }: {
+function ResponseBox({ label, value, onChange, placeholder, dictation, disabled = false, roomy = false }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
+  dictation: DictationControls;
   disabled?: boolean;
   roomy?: boolean;
 }) {
+  const inputId = useId();
+  const statusId = `${inputId}-dictation`;
+  const recording = dictation.state === "recording";
+  const waiting = dictation.state === "requesting" || dictation.state === "transcribing";
+  const status = dictation.state === "requesting"
+    ? "Opening microphone…"
+    : recording
+      ? "Listening… tap the mic when finished"
+      : dictation.state === "transcribing"
+        ? "Adding your words…"
+        : dictation.state === "error"
+          ? dictation.error
+          : "";
+  const micLabel = recording ? "Stop and transcribe" : dictation.state === "transcribing" ? "Transcribing answer" : "Dictate answer";
+
   return (
-    <label className={`response-box ${roomy ? "roomy" : ""}`}>
-      <span>{label}</span>
-      <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} maxLength={1600} />
-      <small>{value.length}/1600</small>
-    </label>
+    <div className={`response-box ${roomy ? "roomy" : ""}`}>
+      <label htmlFor={inputId}>{label}</label>
+      <div className="textarea-shell">
+        <textarea id={inputId} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} maxLength={1600} aria-describedby={statusId} />
+        {dictation.supported && (
+          <button
+            className={`dictation-button ${recording ? "recording" : ""}`}
+            type="button"
+            aria-label={micLabel}
+            aria-pressed={recording}
+            title={micLabel}
+            disabled={disabled || waiting}
+            onClick={dictation.toggle}
+          >
+            {waiting ? <LoaderCircle className="spin" size={20} /> : recording ? <Square size={17} fill="currentColor" /> : <Mic size={21} />}
+          </button>
+        )}
+      </div>
+      <div className="response-meta" id={statusId} aria-live="polite">
+        <span className={dictation.state === "error" ? "error" : ""}>{status}</span>
+        <small>{value.length}/1600</small>
+      </div>
+    </div>
   );
 }
 
@@ -700,11 +695,14 @@ function GuideCard({ guide, onContinue, final = false }: { guide: GuideReply; on
   );
 }
 
-function Timer({ seconds, listening, speechSupported }: { seconds: number; listening: boolean; speechSupported: boolean }) {
+function Timer({ seconds, dictationState }: { seconds: number; dictationState: DictationState }) {
   return (
     <div className={`live-timer ${seconds <= 10 ? "urgent" : ""}`}>
       <span>{String(seconds).padStart(2, "0")}</span>
-      <div><strong>{listening ? "Listening" : "The floor is yours"}</strong><small>{speechSupported ? "Address the Chair" : "Speak aloud and note the key points"}</small></div>
+      <div>
+        <strong>{dictationState === "recording" ? "Listening" : dictationState === "transcribing" ? "Transcribing" : "The floor is yours"}</strong>
+        <small>Tap the mic to dictate</small>
+      </div>
       <Clock3 size={18} />
     </div>
   );
