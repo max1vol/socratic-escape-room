@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Socratic Escape Room",
-  description: "Challenge the argument. Defend the science.",
+  description: "Four questions. Four tests. Can your team out-reason the AI?",
 };
 
 export const viewport: Viewport = {
