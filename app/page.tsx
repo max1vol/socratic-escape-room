@@ -25,6 +25,7 @@ type GuideReply = {
 
 type SpeechRecognitionEventLike = Event & {
   results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
+  resultIndex: number;
 };
 
 type SpeechRecognitionLike = {
@@ -46,7 +47,7 @@ declare global {
 }
 
 const INITIAL_COUNTER =
-  "The heavier probe and the lighter probe land together because the Moon pulls on both with exactly the same gravitational force. With no air resistance, equal forces create equal acceleration.";
+  "The Moon pulls on both probes with exactly the same gravitational force. With no air resistance, equal force means equal acceleration.";
 
 const STAGE_LABELS = ["Spot", "Explain", "Challenge", "Defend"];
 
@@ -188,7 +189,7 @@ export default function Home() {
     let finalText = answer;
     recognition.onresult = (event) => {
       let interim = "";
-      for (let i = 0; i < event.results.length; i += 1) {
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
         if (result.isFinal) finalText += `${result[0].transcript} `;
         else interim += result[0].transcript;
@@ -217,7 +218,6 @@ export default function Home() {
     <main>
       <header className="masthead">
         <div className="brand"><Seal /><span>Socratic<br />Escape Room</span></div>
-        {stage > 0 && stage < 5 && <span className="stage-count">{stage} / 4</span>}
       </header>
 
       <div className="rule" />
@@ -237,9 +237,8 @@ export default function Home() {
       )}
 
       {stage === 1 && (
-        <StageShell number="01" eyebrow="Find the flaw" title="The Lunar Evidence">
+        <StageShell eyebrow="Find the flaw" title="The Lunar Evidence">
           <div className="evidence">
-            <span>Evidence submitted</span>
             <p>On the Moon, a 200 kg probe and a 2 kg probe are released from the same height. They hit the ground together.</p>
           </div>
           <blockquote>
@@ -262,7 +261,7 @@ export default function Home() {
       )}
 
       {stage === 2 && (
-        <StageShell number="02" eyebrow="Build the case" title="Explain it to the bench">
+        <StageShell eyebrow="Build the case" title="Explain it to the bench">
           <p className="prompt">Agree on the correct chain of reasoning. Explain why the forces are different, yet the accelerations match.</p>
           <div className="equation" aria-label="Force equals mass times acceleration">
             <span>F</span><i>=</i><span>m</span><i>×</i><span>a</span>
@@ -284,7 +283,7 @@ export default function Home() {
       )}
 
       {stage === 3 && (
-        <StageShell number="03" eyebrow="Hold your ground" title="The adviser objects">
+        <StageShell eyebrow="Hold your ground" title="The adviser objects">
           <blockquote className="counter">
             <Sparkles size={19} />
             <div><span>AI counterargument</span><p>“{counterargument || "If the heavier probe feels one hundred times more gravitational force, surely it must accelerate one hundred times faster. More force means more acceleration."}”</p></div>
@@ -307,7 +306,7 @@ export default function Home() {
       )}
 
       {stage === 4 && (
-        <StageShell number="04" eyebrow="Final reading" title="Defend it in the House">
+        <StageShell eyebrow="Final reading" title="Defend it in the House">
           {!defenceStarted ? (
             <div className="defence-ready">
               <div className="timer-face"><span>45</span><small>seconds</small></div>
@@ -355,15 +354,14 @@ export default function Home() {
   );
 }
 
-function StageShell({ number, eyebrow, title, children }: {
-  number: string;
+function StageShell({ eyebrow, title, children }: {
   eyebrow: string;
   title: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="screen stage-screen">
-      <div className="stage-heading"><span>{number}</span><div><p>{eyebrow}</p><h1>{title}</h1></div></div>
+      <div className="stage-heading"><p>{eyebrow}</p><h1>{title}</h1><span aria-hidden="true" /></div>
       {children}
     </section>
   );
@@ -388,7 +386,7 @@ function ResponseBox({ label, value, onChange, placeholder, disabled, roomy = fa
         rows={roomy ? 5 : 4}
         maxLength={900}
       />
-      <small>{value.length} / 900</small>
+      {value.length > 760 && <small>{value.length} / 900</small>}
     </label>
   );
 }

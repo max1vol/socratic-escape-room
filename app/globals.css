@@ -42,16 +42,15 @@ main {
 .brand > span { font-family: Georgia, "Times New Roman", serif; font-size: 15px; line-height: 1.03; font-weight: 700; letter-spacing: -.01em; }
 .seal { width: 42px; height: 42px; }
 .seal svg { width: 100%; height: 100%; display: block; }
-.stage-count { font-size: 13px; font-weight: 800; letter-spacing: .12em; color: var(--muted); }
 .rule { height: 1px; background: linear-gradient(90deg, var(--green), var(--green) 34%, var(--line) 34%); }
 
-.progress { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin: 18px 0 0; padding: 0; }
-.progress li { display: flex; flex-direction: column; align-items: center; gap: 5px; color: #98a19d; font-size: 11px; font-weight: 750; }
-.progress li::before { content: ""; width: 100%; height: 3px; border-radius: 99px; background: var(--line); order: -1; }
-.progress li span { width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--paper); }
+.progress { list-style: none; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin: 20px 0 0; padding: 0; }
+.progress li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; color: #98a19d; font-size: 11px; font-weight: 750; }
+.progress li:not(:last-child)::after { content: ""; position: absolute; z-index: 0; top: 13px; left: calc(50% + 17px); width: calc(100% - 34px); height: 1px; background: var(--line); }
+.progress li.done:not(:last-child)::after { background: var(--green); }
+.progress li span { position: relative; z-index: 1; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--paper); }
 .progress li em { font-style: normal; }
 .progress li.active, .progress li.done { color: var(--green); }
-.progress li.active::before, .progress li.done::before { background: var(--green); }
 .progress li.active span { color: white; background: var(--green); border-color: var(--green); box-shadow: 0 0 0 4px var(--green-pale); }
 .progress li.done span { border-color: var(--green); }
 
@@ -75,15 +74,17 @@ h1 i { color: var(--green); font-weight: 500; }
 .primary:disabled { opacity: .48; cursor: not-allowed; box-shadow: none; }
 .primary span { display: inline-flex; align-items: center; gap: 8px; }
 
-.stage-screen { padding: 28px 0 40px; }
-.stage-heading { display: grid; grid-template-columns: 42px 1fr; gap: 13px; align-items: start; margin-bottom: 24px; }
-.stage-heading > span { width: 42px; height: 42px; border-radius: 50%; background: var(--green); color: white; display: grid; place-items: center; font-size: 12px; font-weight: 900; letter-spacing: .05em; margin-top: 2px; }
-.stage-heading p { margin: 0 0 5px; color: var(--green); text-transform: uppercase; font-weight: 850; letter-spacing: .12em; font-size: 11px; }
+.stage-screen { padding: 34px 0 40px; }
+.stage-heading { margin-bottom: 26px; }
+.stage-heading p { margin: 0 0 8px; color: var(--green); text-transform: uppercase; font-weight: 850; letter-spacing: .13em; font-size: 11px; }
 .stage-heading h1 { font-size: clamp(30px, 8.5vw, 46px); line-height: 1.04; letter-spacing: -.035em; }
+.stage-heading > span { display: block; width: 122px; height: 1px; margin-top: 17px; background: var(--gold); position: relative; }
+.stage-heading > span::after { content: ""; position: absolute; top: -3px; left: 58px; width: 7px; height: 7px; background: var(--gold); transform: rotate(45deg); }
 
-.evidence, .verdict { background: var(--green-dark); color: white; padding: 20px; border-radius: 10px; box-shadow: inset 4px 0 0 var(--gold); }
+.evidence, .verdict { position: relative; background: var(--green-dark); color: white; padding: 24px 22px; border-radius: 10px; box-shadow: 0 10px 28px rgba(0,62,47,.14); }
+.evidence::after { content: ""; position: absolute; inset: 8px; border: 1px solid rgba(199,168,90,.55); border-radius: 5px; pointer-events: none; }
 .evidence span, .verdict span { display: block; color: #b9d6cb; text-transform: uppercase; letter-spacing: .13em; font-size: 10px; font-weight: 900; margin-bottom: 9px; }
-.evidence p, .verdict p { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 18px; line-height: 1.45; }
+.evidence p, .verdict p { position: relative; z-index: 1; margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 19px; line-height: 1.5; }
 
 blockquote { margin: 14px 0 20px; padding: 18px; background: white; border: 1px solid var(--line); border-radius: 10px; display: grid; grid-template-columns: 24px 1fr; gap: 10px; box-shadow: 0 5px 18px rgba(23,32,29,.04); }
 blockquote > svg { color: var(--green); margin-top: 1px; }
@@ -99,7 +100,7 @@ blockquote.counter { border-color: #bfd2ca; background: var(--green-pale); }
 
 .response-box { display: block; margin: 0 0 14px; position: relative; }
 .response-box > span { display: block; font-size: 13px; font-weight: 800; margin: 0 0 8px; color: var(--ink); }
-.response-box textarea { display: block; width: 100%; resize: vertical; min-height: 110px; padding: 15px 16px 28px; color: var(--ink); background: white; border: 1px solid #c8d0cc; border-radius: 8px; font-size: 16px; line-height: 1.5; outline: none; transition: border .15s, box-shadow .15s; }
+.response-box textarea { display: block; width: 100%; resize: vertical; min-height: 110px; padding: 15px 16px 22px; color: var(--ink); background: white; border: 1px solid #bfc9c4; border-radius: 8px; font-size: 16px; line-height: 1.5; outline: none; transition: border .15s, box-shadow .15s; }
 .response-box textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(0,101,72,.12); }
 .response-box textarea::placeholder { color: #929b97; }
 .response-box small { position: absolute; right: 11px; bottom: 8px; color: #929b97; font-size: 10px; background: white; padding-left: 5px; }
@@ -132,8 +133,6 @@ blockquote.counter { border-color: #bfd2ca; background: var(--green-pale); }
   main { padding-left: 32px; padding-right: 32px; }
   .masthead { min-height: 100px; }
   .stage-screen { padding-top: 36px; }
-  .stage-heading { grid-template-columns: 48px 1fr; gap: 18px; }
-  .stage-heading > span { width: 48px; height: 48px; }
   .evidence, blockquote, .verdict { padding: 22px 24px; }
 }
 

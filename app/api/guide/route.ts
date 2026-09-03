@@ -57,7 +57,10 @@ JSON shape:
     });
 
     const text = extractText(result).trim();
-    const parsed = JSON.parse(text) as { passed?: unknown; title?: unknown; message?: unknown; counterargument?: unknown };
+    const jsonStart = text.indexOf("{");
+    const jsonEnd = text.lastIndexOf("}");
+    if (jsonStart < 0 || jsonEnd <= jsonStart) throw new Error("Guide returned no JSON");
+    const parsed = JSON.parse(text.slice(jsonStart, jsonEnd + 1)) as { passed?: unknown; title?: unknown; message?: unknown; counterargument?: unknown };
     if (typeof parsed.passed !== "boolean" || typeof parsed.title !== "string" || typeof parsed.message !== "string") {
       throw new Error("Invalid guide response");
     }
