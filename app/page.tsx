@@ -453,13 +453,15 @@ export default function Home() {
           {explainPhase === "brief" && (
             <>
               <QuestionCard question={question} hideAdviser />
-              <p className="prompt">Each player must add one link. No one gives the whole solution.</p>
+              <p className="prompt">{question.prompt}</p>
+              <p className="team-cue">Each player adds one link. No one gives the whole solution.</p>
               <PrimaryButton onClick={() => { setPlayerIndex(0); setExplainPhase("relay"); }}>Begin the relay</PrimaryButton>
             </>
           )}
           {explainPhase === "relay" && (
             <>
               <QuestionCard question={question} hideAdviser />
+              <p className="question-line">{question.prompt}</p>
               <div className="role-card">
                 <span>Player {playerIndex + 1}</span>
                 <p>{RELAY_ROLES[playerIndex % RELAY_ROLES.length]}</p>
@@ -494,6 +496,7 @@ export default function Home() {
             <>
               <Handoff number={(stage + 1) % teamSize + 1} text="You are the AI adviser. Read the objection with conviction." />
               <QuestionCard question={question} />
+              <p className="question-line">{question.prompt}</p>
               <PrimaryButton onClick={() => setChallengePhase("huddle")}>Objection delivered</PrimaryButton>
             </>
           )}
@@ -526,6 +529,7 @@ export default function Home() {
           {defencePhase === "roles" && (
             <>
               <QuestionCard question={question} hideAdviser />
+              <p className="prompt">{question.prompt}</p>
               <div className="role-grid">
                 {Array.from({ length: teamSize }, (_, index) => (
                   <div key={index}><span>{index + 1}</span><strong>{DEFENCE_ROLES[index]}</strong></div>
@@ -537,6 +541,7 @@ export default function Home() {
           {defencePhase === "prepare" && (
             <>
               <QuestionCard question={question} hideAdviser />
+              <p className="question-line">{question.prompt}</p>
               <p className="prompt">Build one claim, choose the best evidence, and predict the opposition. Player {Math.min(4, teamSize)} will speak.</p>
               <PrimaryButton onClick={beginDefence}><Mic size={18} /> Begin 45-second defence</PrimaryButton>
             </>

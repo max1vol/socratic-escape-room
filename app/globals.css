@@ -110,6 +110,8 @@ blockquote.counter { border-color: #bcd1c8; background: var(--green-pale); }
 
 .prompt { font-family: Georgia, "Times New Roman", serif; font-size: 19px; line-height: 1.48; color: #34413c; margin: 18px 0; }
 .prompt.centre { text-align: center; margin: 18px auto 24px; max-width: 30rem; }
+.team-cue { margin: -7px 0 17px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.question-line { margin: 13px 0; padding-left: 12px; border-left: 3px solid var(--gold); color: var(--green-dark); font-family: Georgia, "Times New Roman", serif; font-size: 16px; line-height: 1.45; }
 .quiet { color: var(--muted); font-size: 12px; text-align: center; line-height: 1.5; }
 
 .handoff { min-height: 50vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
