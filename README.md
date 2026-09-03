@@ -1,11 +1,13 @@
 # Socratic Escape Room
 
-A mobile-first shared-device reasoning game for a House of Commons education event. Teams tackle four different cases, with every round testing a different skill:
+A mobile-first reasoning game for a House of Commons education event. It works for one player or a team sharing a device, with every round testing a different skill:
 
-1. **Spot** — vote privately, then identify a deliberately flawed AI claim.
-2. **Explain** — build a correct answer as a spoken reasoning relay.
-3. **Challenge** — withstand an AI counterargument in a team huddle.
-4. **Defend** — assign parliamentary roles and deliver a timed defence with an interruption.
+1. **Spot** — identify the exact flaw in a deliberately convincing AI claim.
+2. **Explain** — build a complete, easy-to-follow chain of reasoning.
+3. **Challenge** — answer the strongest part of an AI counterargument.
+4. **Defend** — deliver a timed parliamentary-style case and answer the opposition.
+
+Spot, Explain, and Challenge each use one question screen and one response. Defend has one briefing followed by the timed speech. The back button preserves answers and verdicts, and team mode adds short speaking cues without adding hand-off screens.
 
 ## Content
 
@@ -18,6 +20,10 @@ Subjects: Science, Maths & logic, History, Geography, Computing, and Parliament 
 `app/api/guide/route.ts` uses the server-side `gpt-5.6-luna` model. It receives a question ID and the team's response, retrieves the private reference answer on the server, and returns a strict structured verdict. The prompt accepts equivalent reasoning, rejects vague conclusions and prompt-injection attempts, and gives one focused hint rather than revealing the full answer after a failed attempt.
 
 The browser never receives `OPENAI_API_KEY` or the private answer keys.
+
+## Interaction feedback
+
+Short CC0 interface sounds from Kenney accompany taps and verdicts, with an always-visible mute control. `web-haptics` provides brief mobile haptics (including its iOS Safari fallback), and `canvas-confetti` marks passed rounds and the final unlock. Confetti automatically respects reduced-motion preferences.
 
 ## Run locally
 

@@ -1,0 +1,12 @@
+Kenney Interface Sounds
+https://kenney.nl/assets/interface-sounds
+https://github.com/Calinou/kenney-interface-sounds
+
+License: CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Included and renamed files:
+- click_001.wav -> tap.wav
+- confirmation_001.wav -> pass.wav
+- error_004.wav -> retry.wav
+- confirmation_004.wav -> unlock.wav

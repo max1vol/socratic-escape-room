@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   ChevronRight,
@@ -13,14 +14,20 @@ import {
   RotateCcw,
   ShieldCheck,
   Sparkles,
+  UserRound,
   Users,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
+import { useFeedback } from "../hooks/use-feedback";
 
 type Level = "ks2" | "ks3";
 type Subject = "science" | "maths" | "history" | "geography" | "computing" | "parliament";
 type SubjectChoice = Subject | "mix";
 type Round = "spot" | "explain" | "challenge" | "defend";
 type Stage = 0 | 1 | 2 | 3 | 4 | 5;
+type Mode = "solo" | "team";
+type DefencePhase = "brief" | "speech" | "conclude";
 
 type PublicQuestion = {
   id: string;
@@ -42,11 +49,10 @@ type GuideReply = {
   missing: string[];
 };
 
-type Vote = "sound" | "flawed" | "unsure";
-type SpotPhase = "handoff" | "vote" | "discuss" | "answer";
-type ExplainPhase = "brief" | "relay" | "answer";
-type ChallengePhase = "reader" | "huddle" | "answer";
-type DefencePhase = "roles" | "prepare" | "speech" | "intervention" | "conclude";
+type RoundSave = {
+  answer: string;
+  guide: GuideReply | null;
+};
 
 type SpeechRecognitionEventLike = Event & {
   results: ArrayLike<{ 0: { transcript: string }; isFinal: boolean }>;
@@ -71,6 +77,8 @@ declare global {
 
 const ROUND_ORDER: Round[] = ["spot", "explain", "challenge", "defend"];
 const ROUND_LABELS = ["Spot", "Explain", "Challenge", "Defend"];
+const SEEN_KEY = "socratic-seen-v2";
+
 const SUBJECTS: { id: SubjectChoice; label: string }[] = [
   { id: "mix", label: "Mix" },
   { id: "science", label: "Science" },
@@ -80,6 +88,7 @@ const SUBJECTS: { id: SubjectChoice; label: string }[] = [
   { id: "computing", label: "Computing" },
   { id: "parliament", label: "Parliament" },
 ];
+
 const SUBJECT_LABEL: Record<Subject, string> = {
   science: "Science",
   maths: "Maths & logic",
@@ -88,16 +97,40 @@ const SUBJECT_LABEL: Record<Subject, string> = {
   computing: "Computing",
   parliament: "Parliament & society",
 };
-const RELAY_ROLES = [
-  "State what the question is really asking.",
-  "Give the first logical step.",
-  "Add the next link in the chain.",
-  "Try to break the reasoning.",
-  "Check the numbers, evidence or units.",
-  "Summarise the explanation in one sentence.",
-];
-const DEFENCE_ROLES = ["Claim", "Evidence", "Opposition", "Speaker", "Fact-check", "Closer"];
-const SEEN_KEY = "socratic-seen-v2";
+
+const ROUND_COPY: Record<Exclude<Round, "defend">, {
+  eyebrow: string;
+  title: string;
+  placeholder: string;
+  action: string;
+  soloCue: string;
+  teamCue: string;
+}> = {
+  spot: {
+    eyebrow: "Round one · spot",
+    title: "Find the flaw",
+    placeholder: "The adviser has confused…",
+    action: "Challenge the claim",
+    soloCue: "Pinpoint one exact mistake, then show why it changes the conclusion.",
+    teamCue: "Think alone for 20 seconds. Then agree on one exact mistake.",
+  },
+  explain: {
+    eyebrow: "Round two · explain",
+    title: "Build the reasoning",
+    placeholder: "The reasoning works because…",
+    action: "Test the explanation",
+    soloCue: "Write the chain so another person could follow every step.",
+    teamCue: "Take turns adding one link. Write the chain you all accept.",
+  },
+  challenge: {
+    eyebrow: "Round three · challenge",
+    title: "Answer the objection",
+    placeholder: "That does not follow because…",
+    action: "Face the adviser",
+    soloCue: "Give the strongest answer, not every answer you can think of.",
+    teamCue: "One person reads the objection. Everyone else builds the rebuttal.",
+  },
+};
 
 function Seal() {
   return (
@@ -151,10 +184,10 @@ function chooseQuestions(bank: PublicQuestion[], level: Level, subject: SubjectC
   const usedSubjects = new Set<Subject>();
 
   for (const round of ROUND_ORDER) {
-    const pool = bank.filter((q) => q.level === level && q.round === round && (subject === "mix" || q.subject === subject));
-    const fresh = pool.filter((q) => !seenSet.has(q.id));
-    const notYetFeatured = fresh.filter((q) => !usedSubjects.has(q.subject));
-    const candidates = notYetFeatured.length ? notYetFeatured : fresh.length ? fresh : pool.filter((q) => !usedSubjects.has(q.subject));
+    const pool = bank.filter((question) => question.level === level && question.round === round && (subject === "mix" || question.subject === subject));
+    const fresh = pool.filter((question) => !seenSet.has(question.id));
+    const newSubject = fresh.filter((question) => !usedSubjects.has(question.subject));
+    const candidates = newSubject.length ? newSubject : fresh.length ? fresh : pool.filter((question) => !usedSubjects.has(question.subject));
     const finalPool = candidates.length ? candidates : pool;
     const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
     if (pick) {
@@ -171,28 +204,25 @@ function chooseQuestions(bank: PublicQuestion[], level: Level, subject: SubjectC
 export default function Home() {
   const [bank, setBank] = useState<PublicQuestion[]>([]);
   const [bankError, setBankError] = useState(false);
+  const [mode, setMode] = useState<Mode>("solo");
   const [level, setLevel] = useState<Level>("ks3");
   const [subject, setSubject] = useState<SubjectChoice>("mix");
   const [teamSize, setTeamSize] = useState(4);
   const [stage, setStage] = useState<Stage>(0);
+  const [pausedStage, setPausedStage] = useState<Stage>(1);
   const [session, setSession] = useState<PublicQuestion[]>([]);
+  const [roundSaves, setRoundSaves] = useState<Partial<Record<Round, RoundSave>>>({});
   const [answer, setAnswer] = useState("");
   const [guide, setGuide] = useState<GuideReply | null>(null);
   const [loading, setLoading] = useState(false);
-
-  const [spotPhase, setSpotPhase] = useState<SpotPhase>("handoff");
-  const [playerIndex, setPlayerIndex] = useState(0);
-  const [votes, setVotes] = useState<Vote[]>([]);
-  const [explainPhase, setExplainPhase] = useState<ExplainPhase>("brief");
-  const [challengePhase, setChallengePhase] = useState<ChallengePhase>("reader");
-  const [defencePhase, setDefencePhase] = useState<DefencePhase>("roles");
+  const [defencePhase, setDefencePhase] = useState<DefencePhase>("brief");
   const [seconds, setSeconds] = useState(45);
-  const [interventionAnswer, setInterventionAnswer] = useState("");
-  const [interrupted, setInterrupted] = useState(false);
   const [speechSupported] = useState(() => typeof window !== "undefined" && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition));
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const speechBaseRef = useRef("");
+  const unlockedRef = useRef(false);
+  const { soundEnabled, tap, toggleSound, unlock, verdict, warning } = useFeedback();
 
   useEffect(() => {
     fetch("/api/questions")
@@ -204,10 +234,11 @@ export default function Home() {
       .catch(() => setBankError(true));
   }, []);
 
-  const question = useMemo(() => {
-    const round = stage > 0 && stage < 5 ? ROUND_ORDER[stage - 1] : null;
-    return round ? session.find((item) => item.round === round) : undefined;
-  }, [session, stage]);
+  const round = stage > 0 && stage < 5 ? ROUND_ORDER[stage - 1] : null;
+  const question = useMemo(
+    () => round ? session.find((item) => item.round === round) : undefined,
+    [round, session],
+  );
 
   const stopRecognition = useCallback(() => {
     recognitionRef.current?.stop();
@@ -227,8 +258,8 @@ export default function Home() {
     recognition.onresult = (event) => {
       let finalText = speechBaseRef.current;
       let interimText = "";
-      for (let i = event.resultIndex; i < event.results.length; i += 1) {
-        const result = event.results[i];
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index];
         if (result.isFinal) finalText += `${result[0].transcript} `;
         else interimText += result[0].transcript;
       }
@@ -247,18 +278,36 @@ export default function Home() {
     const timer = window.setTimeout(() => {
       const next = Math.max(0, seconds - 1);
       setSeconds(next);
-      if (next === 22 && !interrupted) {
-        stopRecognition();
-        setDefencePhase("intervention");
-      } else if (next === 0) {
+      if (next === 10) warning();
+      if (next === 0) {
         stopRecognition();
         setDefencePhase("conclude");
       }
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [defencePhase, interrupted, seconds, stage, stopRecognition]);
+  }, [defencePhase, seconds, stage, stopRecognition, warning]);
 
-  const askGuide = useCallback(async (questionId: string, response: string) => {
+  useEffect(() => {
+    if (stage !== 5 || unlockedRef.current) return;
+    unlockedRef.current = true;
+    unlock();
+  }, [stage, unlock]);
+
+  const saveCurrentRound = useCallback(() => {
+    if (!round) return;
+    setRoundSaves((current) => ({ ...current, [round]: { answer, guide } }));
+  }, [answer, guide, round]);
+
+  const restoreRound = useCallback((targetStage: Stage) => {
+    if (targetStage < 1 || targetStage > 4) return;
+    const saved = roundSaves[ROUND_ORDER[targetStage - 1]];
+    setAnswer(saved?.answer ?? "");
+    setGuide(saved?.guide ?? null);
+    setDefencePhase("brief");
+    setSeconds(45);
+  }, [roundSaves]);
+
+  const askGuide = useCallback(async (questionId: string, response: string, currentRound: Round) => {
     setLoading(true);
     setGuide(null);
     try {
@@ -270,40 +319,42 @@ export default function Home() {
       const data = (await request.json()) as GuideReply & { error?: string };
       if (!request.ok) throw new Error(data.error || "The guide is unavailable.");
       setGuide(data);
+      setRoundSaves((current) => ({ ...current, [currentRound]: { answer: response, guide: data } }));
+      verdict(data.passed);
     } catch (error) {
-      setGuide({
+      const offline = {
         passed: false,
         title: "The Clerk is offline",
         message: error instanceof Error ? error.message : "Check the connection and try again.",
         missing: [],
-      });
+      };
+      setGuide(offline);
+      setRoundSaves((current) => ({ ...current, [currentRound]: { answer: response, guide: offline } }));
+      verdict(false);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [verdict]);
 
   function openRoom() {
+    if (session.length === 4) {
+      setStage(pausedStage);
+      restoreRound(pausedStage);
+      return;
+    }
+
     const selected = chooseQuestions(bank, level, subject);
     if (selected.length !== 4) {
       setBankError(true);
       return;
     }
     setSession(selected);
+    setRoundSaves({});
+    setAnswer("");
+    setGuide(null);
     setStage(1);
-    setSpotPhase("handoff");
-    setPlayerIndex(0);
-    setVotes([]);
-  }
-
-  function recordVote(vote: Vote) {
-    const nextVotes = [...votes, vote];
-    setVotes(nextVotes);
-    if (playerIndex + 1 >= teamSize) {
-      setSpotPhase("discuss");
-    } else {
-      setPlayerIndex((index) => index + 1);
-      setSpotPhase("handoff");
-    }
+    setPausedStage(1);
+    unlockedRef.current = false;
   }
 
   function nextRound() {
@@ -311,75 +362,136 @@ export default function Home() {
       setGuide(null);
       return;
     }
-    setGuide(null);
-    setAnswer("");
-    setPlayerIndex(0);
-    if (stage === 1) {
-      setStage(2);
-      setExplainPhase("brief");
-    } else if (stage === 2) {
-      setStage(3);
-      setChallengePhase("reader");
-    } else if (stage === 3) {
-      setStage(4);
-      setDefencePhase("roles");
-    } else if (stage === 4) {
+    saveCurrentRound();
+    if (stage === 4) {
+      stopRecognition();
       setStage(5);
+      return;
+    }
+    if (stage < 1 || stage > 3) return;
+    const target = (stage + 1) as Stage;
+    setStage(target);
+    restoreRound(target);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function goBack() {
+    if (stage === 4 && defencePhase !== "brief") {
+      stopRecognition();
+      saveCurrentRound();
+      setDefencePhase("brief");
+      setSeconds(45);
+      return;
+    }
+    saveCurrentRound();
+    if (stage === 1) {
+      setPausedStage(1);
+      setStage(0);
+      return;
+    }
+    if (stage > 1 && stage < 5) {
+      const target = (stage - 1) as Stage;
+      setStage(target);
+      restoreRound(target);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }
 
-  function reset() {
+  function startFresh() {
     stopRecognition();
-    setStage(0);
     setSession([]);
+    setRoundSaves({});
     setAnswer("");
     setGuide(null);
-    setVotes([]);
-    setPlayerIndex(0);
+    setDefencePhase("brief");
     setSeconds(45);
-    setInterrupted(false);
-    setInterventionAnswer("");
+    unlockedRef.current = false;
+  }
+
+  function reset() {
+    setStage(0);
+    startFresh();
   }
 
   function beginDefence() {
     setSeconds(45);
-    setInterrupted(false);
-    setAnswer("");
+    setGuide(null);
     setDefencePhase("speech");
     window.setTimeout(startRecognition, 120);
   }
 
-  function resumeDefence() {
-    setInterrupted(true);
-    setDefencePhase("speech");
-    window.setTimeout(startRecognition, 120);
+  function finishDefence() {
+    stopRecognition();
+    setDefencePhase("conclude");
   }
 
   function submitCurrent() {
-    if (!question || answer.trim().length < 12) return;
-    const response = stage === 4
-      ? `Defence: ${answer.trim()}\nResponse to intervention: ${interventionAnswer.trim()}`
-      : answer.trim();
-    void askGuide(question.id, response);
+    if (!question || !round || answer.trim().length < 12) return;
+    void askGuide(question.id, answer.trim(), round);
   }
 
+  function handleButtonFeedback(event: React.MouseEvent<HTMLElement>) {
+    if (event.target instanceof Element && event.target.closest("button:not(:disabled)")) tap();
+  }
+
+  const isPaused = stage === 0 && session.length === 4;
+  const playerLabel = mode === "solo" ? "Solo" : `${teamSize}`;
+
   return (
-    <main>
+    <main onClickCapture={handleButtonFeedback}>
       <header className="masthead">
-        <div className="brand"><Seal /><span>Socratic<br />Escape Room</span></div>
-        {stage > 0 && stage < 5 && <span className="team-mark"><Users size={15} /> {teamSize}</span>}
+        <div className="mast-left">
+          {stage > 0 && stage < 5 && (
+            <button className="icon-button back-button" aria-label="Go back" onClick={goBack}><ArrowLeft size={20} /></button>
+          )}
+          <div className="brand"><Seal /><span>Socratic<br />Escape Room</span></div>
+        </div>
+        <div className="header-actions">
+          {stage > 0 && stage < 5 && (
+            <span className="team-mark">
+              {mode === "solo" ? <UserRound size={15} /> : <Users size={15} />}{playerLabel}
+            </span>
+          )}
+          <button
+            className="icon-button sound-button"
+            aria-label={soundEnabled ? "Mute sounds" : "Turn sounds on"}
+            aria-pressed={!soundEnabled}
+            onClick={toggleSound}
+          >
+            {soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />}
+          </button>
+        </div>
       </header>
       <div className="rule" />
       <Progress stage={stage} />
 
-      {stage === 0 && (
+      {stage === 0 && isPaused && (
+        <section className="screen intro paused">
+          <div className="kicker"><Gavel size={17} /> The chamber is waiting</div>
+          <h1>Room<br /><i>paused.</i></h1>
+          <p className="lead">Your question and answer are exactly where you left them.</p>
+          <div className="paused-card">
+            <span>{level.toUpperCase()}</span>
+            <strong>{subject === "mix" ? "Mixed subjects" : SUBJECT_LABEL[subject]}</strong>
+            <small>{mode === "solo" ? "Solo session" : `${teamSize}-player team`}</small>
+          </div>
+          <PrimaryButton onClick={openRoom}>Resume round one</PrimaryButton>
+          <button className="secondary" onClick={startFresh}><RotateCcw size={17} /> Start a new room</button>
+        </section>
+      )}
+
+      {stage === 0 && !isPaused && (
         <section className="screen intro">
           <div className="kicker"><Gavel size={17} /> The inquiry is called</div>
-          <h1>Can your team<br /><i>out-reason</i> the AI?</h1>
-          <p className="lead">Four questions. Four different tests. One shared device.</p>
+          <h1>Can you<br /><i>out-reason</i> AI?</h1>
+          <p className="lead">Four questions. Four ways to think. Play alone or share one device.</p>
 
           <div className="setup-card">
-            <div className="segmented" aria-label="Difficulty level">
+            <div className="segmented" aria-label="Players">
+              <button className={mode === "solo" ? "selected" : ""} onClick={() => setMode("solo")}><UserRound size={16} /> Just me</button>
+              <button className={mode === "team" ? "selected" : ""} onClick={() => setMode("team")}><Users size={16} /> Team</button>
+            </div>
+            <div className="segmented compact" aria-label="Difficulty level">
               <button className={level === "ks2" ? "selected" : ""} onClick={() => setLevel("ks2")}>KS2</button>
               <button className={level === "ks3" ? "selected" : ""} onClick={() => setLevel("ks3")}>KS3</button>
             </div>
@@ -388,161 +500,63 @@ export default function Home() {
                 <button key={item.id} className={subject === item.id ? "selected" : ""} onClick={() => setSubject(item.id)}>{item.label}</button>
               ))}
             </div>
-            <div className="team-picker">
-              <div><Users size={19} /><span><strong>{teamSize} players</strong><small>around this device</small></span></div>
-              <div>
-                <button aria-label="Remove a player" disabled={teamSize === 2} onClick={() => setTeamSize((size) => Math.max(2, size - 1))}><Minus size={17} /></button>
-                <button aria-label="Add a player" disabled={teamSize === 6} onClick={() => setTeamSize((size) => Math.min(6, size + 1))}><Plus size={17} /></button>
+            {mode === "team" && (
+              <div className="team-picker">
+                <div><Users size={19} /><span><strong>{teamSize} players</strong><small>sharing this device</small></span></div>
+                <div>
+                  <button aria-label="Remove a player" disabled={teamSize === 2} onClick={() => setTeamSize((size) => Math.max(2, size - 1))}><Minus size={17} /></button>
+                  <button aria-label="Add a player" disabled={teamSize === 6} onClick={() => setTeamSize((size) => Math.min(6, size + 1))}><Plus size={17} /></button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {bankError && <p className="inline-error">The cases could not be loaded. Refresh and try again.</p>}
           <PrimaryButton disabled={!bank.length || bankError} onClick={openRoom}>
-            {!bank.length && !bankError ? "Preparing the chamber…" : "Seat the team"}
+            {!bank.length && !bankError ? "Preparing the chamber…" : "Enter the room"}
           </PrimaryButton>
         </section>
       )}
 
-      {stage === 1 && question && (
-        <StageShell eyebrow="Round one · private judgement" title="Spot the flaw" subject={question.subject}>
-          {spotPhase === "handoff" && (
-            <Handoff number={playerIndex + 1} text="Take the device. Everyone else, look away." action="I have the device" onClick={() => setSpotPhase("vote")} />
-          )}
-          {spotPhase === "vote" && (
-            <>
-              <QuestionCard question={question} />
-              <p className="prompt">Before the team talks: how sound is the adviser&apos;s reasoning?</p>
-              <div className="vote-actions">
-                <button onClick={() => recordVote("sound")}>Sound</button>
-                <button onClick={() => recordVote("flawed")}>Flawed</button>
-                <button onClick={() => recordVote("unsure")}>Not sure</button>
-              </div>
-            </>
-          )}
-          {spotPhase === "discuss" && (
-            <>
-              <QuestionCard question={question} />
-              <div className="vote-tally" aria-label="Private vote results">
-                <span><strong>{votes.filter((v) => v === "sound").length}</strong> sound</span>
-                <span><strong>{votes.filter((v) => v === "flawed").length}</strong> flawed</span>
-                <span><strong>{votes.filter((v) => v === "unsure").length}</strong> unsure</span>
-              </div>
-              <p className="prompt">Compare reasons—not just votes. Agree on the exact mistake.</p>
-              <PrimaryButton onClick={() => setSpotPhase("answer")}>We have a challenge</PrimaryButton>
-            </>
-          )}
-          {spotPhase === "answer" && (
-            <AnswerPanel
-              prompt={question.prompt}
-              placeholder="The adviser has confused…"
-              answer={answer}
-              setAnswer={setAnswer}
-              guide={guide}
-              loading={loading}
-              submit={submitCurrent}
-              next={nextRound}
-              action="Challenge the claim"
-            />
-          )}
-        </StageShell>
-      )}
-
-      {stage === 2 && question && (
-        <StageShell eyebrow="Round two · reasoning relay" title="Explain it together" subject={question.subject}>
-          {explainPhase === "brief" && (
-            <>
-              <QuestionCard question={question} hideAdviser />
-              <p className="prompt">{question.prompt}</p>
-              <p className="team-cue">Each player adds one link. No one gives the whole solution.</p>
-              <PrimaryButton onClick={() => { setPlayerIndex(0); setExplainPhase("relay"); }}>Begin the relay</PrimaryButton>
-            </>
-          )}
-          {explainPhase === "relay" && (
-            <>
-              <QuestionCard question={question} hideAdviser />
-              <p className="question-line">{question.prompt}</p>
-              <div className="role-card">
-                <span>Player {playerIndex + 1}</span>
-                <p>{RELAY_ROLES[playerIndex % RELAY_ROLES.length]}</p>
-                <small>Say it aloud. The next player may question it.</small>
-              </div>
-              <PrimaryButton onClick={() => {
-                if (playerIndex + 1 >= teamSize) setExplainPhase("answer");
-                else setPlayerIndex((index) => index + 1);
-              }}>{playerIndex + 1 >= teamSize ? "Write the team's chain" : "Pass to the next player"}</PrimaryButton>
-            </>
-          )}
-          {explainPhase === "answer" && (
-            <AnswerPanel
-              prompt={question.prompt}
-              placeholder="Our reasoning is…"
-              answer={answer}
-              setAnswer={setAnswer}
-              guide={guide}
-              loading={loading}
-              submit={submitCurrent}
-              next={nextRound}
-              action="Test the explanation"
-              roomy
-            />
-          )}
-        </StageShell>
-      )}
-
-      {stage === 3 && question && (
-        <StageShell eyebrow="Round three · pressure test" title="Face the objection" subject={question.subject}>
-          {challengePhase === "reader" && (
-            <>
-              <Handoff number={(stage + 1) % teamSize + 1} text="You are the AI adviser. Read the objection with conviction." />
-              <QuestionCard question={question} />
-              <p className="question-line">{question.prompt}</p>
-              <PrimaryButton onClick={() => setChallengePhase("huddle")}>Objection delivered</PrimaryButton>
-            </>
-          )}
-          {challengePhase === "huddle" && (
-            <>
-              <div className="huddle-mark"><Users size={36} /></div>
-              <p className="prompt centre">The adviser keeps the device. Everyone else has 40 seconds to build the rebuttal aloud.</p>
-              <PrimaryButton onClick={() => setChallengePhase("answer")}>We can answer it</PrimaryButton>
-            </>
-          )}
-          {challengePhase === "answer" && (
-            <AnswerPanel
-              prompt={question.prompt}
-              placeholder="That does not follow because…"
-              answer={answer}
-              setAnswer={setAnswer}
-              guide={guide}
-              loading={loading}
-              submit={submitCurrent}
-              next={nextRound}
-              action="Answer the objection"
-              roomy
-            />
-          )}
+      {stage > 0 && stage < 4 && question && round && round !== "defend" && (
+        <StageShell eyebrow={ROUND_COPY[round].eyebrow} title={ROUND_COPY[round].title} subject={question.subject}>
+          <QuestionCard question={question} hideAdviser={round === "explain"} />
+          <div className="mode-cue">
+            {mode === "solo" ? <UserRound size={18} /> : <Users size={18} />}
+            <p>{mode === "solo" ? ROUND_COPY[round].soloCue : ROUND_COPY[round].teamCue}</p>
+          </div>
+          <AnswerPanel
+            prompt={question.prompt}
+            placeholder={ROUND_COPY[round].placeholder}
+            label={mode === "solo" ? "Your answer" : "Shared answer"}
+            answer={answer}
+            setAnswer={setAnswer}
+            guide={guide}
+            loading={loading}
+            submit={submitCurrent}
+            next={nextRound}
+            action={ROUND_COPY[round].action}
+            roomy={round !== "spot"}
+          />
         </StageShell>
       )}
 
       {stage === 4 && question && (
-        <StageShell eyebrow="Round four · final reading" title="Defend it in the House" subject={question.subject}>
-          {defencePhase === "roles" && (
+        <StageShell eyebrow="Round four · defend" title="Make the case" subject={question.subject}>
+          {defencePhase === "brief" && (
             <>
               <QuestionCard question={question} hideAdviser />
               <p className="prompt">{question.prompt}</p>
-              <div className="role-grid">
-                {Array.from({ length: teamSize }, (_, index) => (
-                  <div key={index}><span>{index + 1}</span><strong>{DEFENCE_ROLES[index]}</strong></div>
-                ))}
+              {question.intervention && (
+                <blockquote className="counter">
+                  <Gavel size={19} />
+                  <div><span>Opposition asks</span><p>“{question.intervention}”</p></div>
+                </blockquote>
+              )}
+              <div className="mode-cue">
+                {mode === "solo" ? <UserRound size={18} /> : <Users size={18} />}
+                <p>{mode === "solo" ? "Address the Chair. Make one claim, use the best evidence, and finish clearly." : "Choose one speaker. The others may pass one short note during the speech."}</p>
               </div>
-              <PrimaryButton onClick={() => setDefencePhase("prepare")}>Prepare the case</PrimaryButton>
-            </>
-          )}
-          {defencePhase === "prepare" && (
-            <>
-              <QuestionCard question={question} hideAdviser />
-              <p className="question-line">{question.prompt}</p>
-              <p className="prompt">Build one claim, choose the best evidence, and predict the opposition. Player {Math.min(4, teamSize)} will speak.</p>
               <PrimaryButton onClick={beginDefence}><Mic size={18} /> Begin 45-second defence</PrimaryButton>
             </>
           )}
@@ -553,40 +567,26 @@ export default function Home() {
                 label={speechSupported ? "Live transcript" : "Defence notes"}
                 value={answer}
                 onChange={setAnswer}
-                placeholder="Madam Deputy Speaker, our case is…"
+                placeholder="Madam Deputy Speaker, my case is…"
                 roomy
               />
-              <p className="quiet">The Clerk will interrupt once. Keep speaking until then.</p>
-            </>
-          )}
-          {defencePhase === "intervention" && (
-            <>
-              <blockquote className="counter">
-                <Sparkles size={19} />
-                <div><span>AI intervention</span><p>“{question.intervention}”</p></div>
-              </blockquote>
-              <div className="role-card">
-                <span>Player {(Math.min(4, teamSize) % teamSize) + 1}</span>
-                <p>Answer in one sentence. The speaker may not help.</p>
-              </div>
-              <ResponseBox label="Your answer" value={interventionAnswer} onChange={setInterventionAnswer} placeholder="That concern matters, but…" />
-              <PrimaryButton disabled={interventionAnswer.trim().length < 8} onClick={resumeDefence}>Answer and resume</PrimaryButton>
+              <PrimaryButton disabled={answer.trim().length < 20} onClick={finishDefence}>Finish the defence</PrimaryButton>
             </>
           )}
           {defencePhase === "conclude" && (
             <>
-              <div className="time-called"><Gavel size={28} /><span>Time</span></div>
+              <div className="time-called"><Gavel size={28} /><span>Order</span></div>
               <ResponseBox
-                label={speechSupported ? "Your recorded defence" : "Write the case you delivered"}
+                label={speechSupported ? "Your recorded defence" : "Your defence"}
                 value={answer}
                 onChange={setAnswer}
-                placeholder="Our case is…"
+                placeholder="My case is…"
                 roomy
+                disabled={loading || Boolean(guide)}
               />
-              <div className="intervention-recap"><span>Intervention answered</span><p>{interventionAnswer}</p></div>
               {guide ? <GuideCard guide={guide} onContinue={nextRound} final /> : (
                 <PrimaryButton disabled={answer.trim().length < 20 || loading} onClick={submitCurrent}>
-                  {loading ? "The House is deciding…" : "Conclude the case"}
+                  {loading ? "The House is deciding…" : "Put it to the House"}
                 </PrimaryButton>
               )}
             </>
@@ -599,7 +599,7 @@ export default function Home() {
           <div className="victory-mark"><ShieldCheck size={44} /></div>
           <p className="kicker">The motion carries</p>
           <h1>Room<br /><i>unlocked.</i></h1>
-          <p className="lead">Four different cases survived four different tests—because every player had a job.</p>
+          <p className="lead">Four different cases survived four different tests{mode === "team" ? "—with everyone contributing." : "."}</p>
           <div className="case-list">
             {session.map((item, index) => (
               <div key={item.id}><span><Check size={14} /></span><p><strong>{ROUND_LABELS[index]}</strong>{item.title}</p></div>
@@ -647,25 +647,10 @@ function QuestionCard({ question, hideAdviser = false }: { question: PublicQuest
   );
 }
 
-function Handoff({ number, text, action, onClick }: {
-  number: number;
-  text: string;
-  action?: string;
-  onClick?: () => void;
-}) {
-  return (
-    <div className={`handoff ${action ? "" : "compact"}`}>
-      <div className="player-number">{number}</div>
-      <h2>Player {number}</h2>
-      <p>{text}</p>
-      {action && onClick && <PrimaryButton onClick={onClick}>{action}</PrimaryButton>}
-    </div>
-  );
-}
-
-function AnswerPanel({ prompt, placeholder, answer, setAnswer, guide, loading, submit, next, action, roomy = false }: {
+function AnswerPanel({ prompt, placeholder, label, answer, setAnswer, guide, loading, submit, next, action, roomy = false }: {
   prompt: string;
   placeholder: string;
+  label: string;
   answer: string;
   setAnswer: (value: string) => void;
   guide: GuideReply | null;
@@ -678,7 +663,7 @@ function AnswerPanel({ prompt, placeholder, answer, setAnswer, guide, loading, s
   return (
     <>
       <p className="prompt">{prompt}</p>
-      <ResponseBox label="Team answer" value={answer} onChange={setAnswer} placeholder={placeholder} roomy={roomy} disabled={loading} />
+      <ResponseBox label={label} value={answer} onChange={setAnswer} placeholder={placeholder} roomy={roomy} disabled={loading || Boolean(guide)} />
       {guide ? <GuideCard guide={guide} onContinue={next} /> : (
         <PrimaryButton disabled={answer.trim().length < 12 || loading} onClick={submit}>
           {loading ? "The Clerk is reading…" : action}
@@ -710,7 +695,7 @@ function GuideCard({ guide, onContinue, final = false }: { guide: GuideReply; on
     <div className={`guide-card ${guide.passed ? "pass" : "retry"}`} aria-live="polite">
       <div className="guide-title">{guide.passed ? <Check size={19} /> : <Sparkles size={19} />}<strong>{guide.title}</strong></div>
       <p>{guide.message}</p>
-      <button onClick={onContinue}><span>{guide.passed ? final ? "Unlock the room" : "Enter the next round" : "Revise the answer"}</span><ChevronRight size={18} /></button>
+      <button onClick={onContinue}><span>{guide.passed ? final ? "Unlock the room" : "Next round" : "Revise the answer"}</span><ChevronRight size={18} /></button>
     </div>
   );
 }
